@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, FileState } from "@google/genai";
 import { MODEL_NAME } from "../constants";
 
 // Safe API Key access
@@ -25,87 +25,74 @@ export const fileToGenerativePart = async (file: File): Promise<string> => {
 };
 
 /**
- * Uploads a file to Google Gemini File API via Standard REST.
- * This ensures browser compatibility and avoids complex SDK polyfills for 'fs'.
+ * Converts a browser File to a base64 data string for SDK upload.
  */
-const uploadFileToGemini = async (file: File, apiKey: string): Promise<{ uri: string; name: string }> => {
-  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-  const metadata = { file: { display_name: file.name } };
-
-  try {
-    // 1. Initiate Resumable Upload
-    const startRes = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        'X-Goog-Upload-Protocol': 'resumable',
-        'X-Goog-Upload-Command': 'start',
-        'X-Goog-Upload-Header-Content-Length': file.size.toString(),
-        'X-Goog-Upload-Header-Content-Type': file.type,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(metadata),
-    });
-
-    if (!startRes.ok) {
-        throw new Error(`Upload Init Failed: ${startRes.status} ${startRes.statusText}`);
-    }
-
-    const uploadLocation = startRes.headers.get('X-Goog-Upload-URL');
-    if (!uploadLocation) {
-        throw new Error("No upload location header received.");
-    }
-
-    // 2. Perform Upload
-    const uploadRes = await fetch(uploadLocation, {
-      method: 'POST',
-      headers: {
-        'X-Goog-Upload-Protocol': 'resumable',
-        'X-Goog-Upload-Command': 'upload, finalize',
-        'X-Goog-Upload-Offset': '0',
-        'Content-Length': file.size.toString(),
-        'Content-Type': file.type,
-      },
-      body: file, // Browser automatically handles File/Blob streaming
-    });
-
-    if (!uploadRes.ok) {
-        throw new Error(`File Transfer Failed: ${uploadRes.status} ${uploadRes.statusText}`);
-    }
-
-    const fileInfo = await uploadRes.json();
-    return { uri: fileInfo.file.uri, name: fileInfo.file.name };
-  } catch (e: any) {
-    console.error("Upload Error:", e);
-    throw new Error(`视频上传失败: ${e.message}`);
-  }
+const fileToBase64Data = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = (e) => reject(new Error(`FileReader failed: ${e}`));
+    reader.readAsDataURL(file);
+  });
 };
 
 /**
- * Polls the file status until it is ACTIVE.
+ * Uploads a video file to Google Gemini using the SDK and waits for processing.
  */
-const waitForFileActive = async (fileName: string, apiKey: string): Promise<void> => {
-  const checkUrl = `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`;
-  
-  // Poll max 60 times, every 2 seconds = 2 minutes timeout for processing
-  for (let i = 0; i < 60; i++) {
-    try {
-        const res = await fetch(checkUrl);
-        const data = await res.json();
-        
-        if (data.state === 'ACTIVE') {
-            return; // Ready!
-        }
-        if (data.state === 'FAILED') {
-            throw new Error("Google 服务器无法处理此视频文件 (State: FAILED).");
-        }
-        
-        // Wait 2 seconds
-        await new Promise(r => setTimeout(r, 2000));
-    } catch (e) {
-        throw e;
+const uploadAndWaitForVideo = async (
+  ai: GoogleGenAI,
+  file: File,
+  onStatusUpdate?: (status: string) => void
+): Promise<{ uri: string; mimeType: string }> => {
+  try {
+    if (onStatusUpdate) onStatusUpdate("正在上传视频到云端...");
+    console.log(`Uploading video: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+
+    // Convert File to base64 for SDK upload
+    const base64Data = await fileToBase64Data(file);
+
+    // Use SDK to upload file
+    const uploadResult = await ai.files.upload({
+      file: {
+        mimeType: file.type,
+        displayName: file.name,
+        data: base64Data,
+      },
+    });
+
+    if (!uploadResult?.name) {
+      throw new Error("上传后未返回文件信息");
     }
+
+    if (onStatusUpdate) onStatusUpdate("等待云端视频处理...");
+
+    // Poll until file is ACTIVE
+    let fileInfo = uploadResult;
+    const maxPolls = 60;
+    for (let i = 0; i < maxPolls; i++) {
+      if (fileInfo.state === FileState.ACTIVE) {
+        break;
+      }
+      if (fileInfo.state === FileState.FAILED) {
+        throw new Error("Google 服务器无法处理此视频文件 (State: FAILED).");
+      }
+      await new Promise(r => setTimeout(r, 2000));
+      fileInfo = await ai.files.get({ name: uploadResult.name });
+    }
+
+    if (fileInfo.state !== FileState.ACTIVE) {
+      throw new Error("视频云端处理超时，请稍后重试。");
+    }
+
+    return { uri: fileInfo.uri!, mimeType: fileInfo.mimeType || file.type };
+  } catch (e: any) {
+    console.error("Video Upload Error:", e);
+    throw new Error(`视频上传失败: ${e.message}`);
   }
-  throw new Error("视频云端处理超时，请稍后重试。");
 };
 
 async function retryOperation<T>(
@@ -144,25 +131,18 @@ export const analyzeContent = async (
     const ai = new GoogleGenAI({ apiKey });
     let parts: any[] = [];
 
-    // --- VIDEO HANDLING via FILE API ---
+    // --- VIDEO HANDLING via SDK FILE API ---
     if (mimeType.startsWith('video/')) {
-       if (onStatusUpdate) onStatusUpdate("正在上传视频到云端...");
-       console.log(`Uploading video: ${file.name} (${(file.size/1024/1024).toFixed(1)}MB)`);
-       
-       // 1. Upload
-       const { uri, name } = await uploadFileToGemini(file, apiKey);
-       
-       if (onStatusUpdate) onStatusUpdate("等待云端视频处理...");
-       // 2. Wait for processing
-       await waitForFileActive(name, apiKey);
+       // Upload and wait using SDK (avoids CORS issues)
+       const videoFile = await uploadAndWaitForVideo(ai, file, onStatusUpdate);
        
        if (onStatusUpdate) onStatusUpdate("正在生成分析结果...");
-       // 3. Construct Request with File URI
+       // Construct Request with File URI
        parts = [
            { 
              fileData: { 
-               fileUri: uri, 
-               mimeType: mimeType 
+               fileUri: videoFile.uri, 
+               mimeType: videoFile.mimeType 
              } 
            },
            { text: prompt }
