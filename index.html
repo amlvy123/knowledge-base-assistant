@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>大聪明知识库助手</title>
+    
+    <!-- CSS Framework -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Global Error Handler & Env Shim -->
+    <script>
+      // 1. 初始化 process.env 避免报错
+      window.process = window.process || { env: { API_KEY: '' } };
+
+      // 2. 全局错误捕获
+      window.onerror = function(msg, url, line, col, error) {
+        // 安全转换 msg 为字符串，防止报错
+        const message = String(msg || '');
+        
+        if (message.includes('ResizeObserver loop')) return false;
+
+        const root = document.getElementById('root') || document.body;
+        // 避免重复报错覆盖
+        if (!root.innerHTML.includes('Startup Error')) {
+            root.innerHTML = `
+              <div style="color: #ef4444; padding: 20px; font-family: sans-serif; background: #fff; border-top: 4px solid #ef4444;">
+                <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">Startup Error</h2>
+                <p>应用程序启动失败。</p>
+                <div style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; overflow: auto; border: 1px solid #e2e8f0;">
+                    <div style="font-weight:bold; margin-bottom:8px;">${message}</div>
+                    <div style="font-size: 0.85em; color: #64748b; margin-bottom:10px;">${url}:${line}:${col}</div>
+                    <pre style="margin-top: 10px; font-size: 0.85em; white-space: pre-wrap;">${error?.stack || String(error)}</pre>
+                </div>
+              </div>
+            `;
+        }
+        console.error('Global Error:', error);
+        return false; 
+      };
+    </script>
+
+    <!-- Global Styles -->
+    <style>
+      body { margin: 0; background-color: #f8fafc; }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: #f1f5f9; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+
+    <!-- Dependency Map (Strictly Pinned to React 18.3.1) -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@18.3.1,react-dom@18.3.1",
+    "@google/genai": "https://esm.sh/@google/genai@0.2.0",
+    "react-markdown": "https://esm.sh/react-markdown@9.0.1?deps=react@18.3.1,react-dom@18.3.1",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@18.3.1",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "file-saver": "https://esm.sh/file-saver@2.0.5",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "@/": "./"
+  }
+}
+</script>
+</head>
+  <body class="text-slate-900 font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "大聪明知识库助手",
+  "description": "基于 Gemini 3 的强大批量内容分析工具。将 PDF、视频和网页内容转化为结构化的知识库资产。",
+  "requestFramePermissions": []
+}
