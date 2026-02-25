@@ -25,23 +25,8 @@ export const fileToGenerativePart = async (file: File): Promise<string> => {
 };
 
 /**
- * Converts a browser File to a base64 data string for SDK upload.
- */
-const fileToBase64Data = async (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = (e) => reject(new Error(`FileReader failed: ${e}`));
-    reader.readAsDataURL(file);
-  });
-};
-
-/**
  * Uploads a video file to Google Gemini using the SDK and waits for processing.
+ * The SDK accepts Blob/File objects directly in browser environments.
  */
 const uploadAndWaitForVideo = async (
   ai: GoogleGenAI,
@@ -52,16 +37,10 @@ const uploadAndWaitForVideo = async (
     if (onStatusUpdate) onStatusUpdate("正在上传视频到云端...");
     console.log(`Uploading video: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
-    // Convert File to base64 for SDK upload
-    const base64Data = await fileToBase64Data(file);
-
-    // Use SDK to upload file
-    const uploadResult = await ai.files.upload({
-      file: {
-        mimeType: file.type,
-        displayName: file.name,
-        data: base64Data,
-      },
+    // Use SDK to upload file - pass File (Blob) directly with mimeType in config
+    const uploadResult = await ai.files.upload(file, {
+      mimeType: file.type,
+      displayName: file.name,
     });
 
     if (!uploadResult?.name) {
