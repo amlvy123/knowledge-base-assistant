@@ -10,6 +10,23 @@ const getApiKey = () => {
   return "";
 };
 
+// Get custom base URL for proxy support
+const getBaseUrl = (): string | undefined => {
+  if (typeof process !== 'undefined' && process.env && process.env.GEMINI_BASE_URL) {
+    return process.env.GEMINI_BASE_URL;
+  }
+  return undefined;
+};
+
+// Create GoogleGenAI instance with optional proxy base URL
+const createAI = (apiKey: string): GoogleGenAI => {
+  const baseUrl = getBaseUrl();
+  if (baseUrl) {
+    return new GoogleGenAI({ apiKey, httpOptions: { baseUrl } });
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 // Helper to convert File to Base64 (Keep for PDF/Image)
 export const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -107,7 +124,7 @@ export const analyzeContent = async (
         throw new Error("请在代码或环境变量中配置 process.env.API_KEY");
     }
     
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = createAI(apiKey);
     let parts: any[] = [];
 
     // --- VIDEO HANDLING via SDK FILE API ---
@@ -173,7 +190,7 @@ export const analyzeContent = async (
 export const testConnection = async (): Promise<string> => {
   try {
     const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy' }); 
+    const ai = createAI(apiKey || 'dummy'); 
     const response = await retryOperation(async () => {
         return await ai.models.generateContent({
             model: 'gemini-3-flash-preview', 
